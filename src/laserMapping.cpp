@@ -60,6 +60,9 @@
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
 
+#include "data_recorder.h"
+#include <std_srvs/Trigger.h>
+
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
 #define MAXN                (720000)
@@ -139,6 +142,14 @@ geometry_msgs::PoseStamped msg_body_pose;
 
 shared_ptr<Preprocess> p_pre(new Preprocess());
 shared_ptr<ImuProcess> p_imu(new ImuProcess());
+
+std::shared_ptr<DataRecorder<RecordPointType>> recorder_ptr_;
+ros::ServiceServer recorder_server_;
+
+std::string result_dir, data_id, test_topic, param_set_name;
+std::vector<std::string> lidar_names;
+std::vector<int> lidar_indices;
+std::string save_dir;
 
 void SigHandle(int sig)
 {
@@ -753,7 +764,47 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     solve_time += omp_get_wtime() - solve_start_;
 }
 
-int main(int argc, char** argv)
+void recordRamUsage(double stamp)
+{
+    pid_t pid = getpid();
+    std::string path = "/proc/" + std::to_string(pid) + "/status";
+    std::ifstream file(path);
+    std::string line;
+    double mem_usage = 0.0;
+    while (std::getline(file, line))
+    {
+        if (line.find("VmRSS:") == 0)
+        {
+            mem_usage = std::stod(line.substr(6)) / 1024.0; // Convert to MB
+            break;
+        }
+    }
+
+    recorder_ptr_->recordValue("RAM_usage", stamp, mem_usage);
+}
+
+bool data_recorder_callback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if (recorder_ptr_ != nullptr)
+    {
+
+        recorder_ptr_->savePose();
+        recorder_ptr_->saveTime();
+        recorder_ptr_->saveValue();
+        recorder_ptr_->saveStatus("Finished");
+
+        res.success = true;
+        res.message = "Data saved successfully.";
+    }
+    else
+    {
+        res.success = false;
+        res.message = "Recorder pointer is null, cannot save data.";
+    }
+    return true;
+}
+
+int main(int argc, char **argv)
 {
     ros::init(argc, argv, "laserMapping");
     ros::NodeHandle nh;
@@ -791,6 +842,42 @@ int main(int argc, char** argv)
     nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
     nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
     nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
+
+    //----------------------------------------------------------------------------------------------------
+    // Data Recorder Configurations
+    nh.param<std::string>("data_recorder/result_dir", result_dir, "/");
+    nh.param<std::string>("data_recorder/data_id", data_id, "data_id");
+    nh.param<std::string>("data_recorder/test_topic", test_topic, "test_topic");
+    nh.param<std::string>("data_recorder/param_set_name", param_set_name, "default");
+    nh.param<std::vector<std::string>>("data_recorder/lidar_names", lidar_names,
+                                       std::vector<std::string>());
+    nh.param<std::vector<int>>("data_recorder/lidar_indices", lidar_indices, std::vector<int>());
+
+    std::string lidars_combination = "";
+    for (auto &index : lidar_indices)
+    {
+        lidars_combination += lidar_names[index] + "_";
+    }
+    lidars_combination = lidars_combination.substr(0, lidars_combination.size() - 1);
+
+    save_dir = result_dir + "/" + data_id + "/" + lidars_combination + "/" + test_topic + "/" +
+               lidars_combination + "/fastlio" + "/" + param_set_name;
+
+    // Check variables
+    std::cout << "\033[32m" << "Data Recorder Configurations:" << std::endl;
+    std::cout << "Result Directory: " << result_dir << std::endl;
+    std::cout << "Data ID: " << data_id << std::endl;
+    std::cout << "Test Topic: " << test_topic << std::endl;
+    std::cout << "Parameter Set Name: " << param_set_name << std::endl;
+    std::cout << "LiDAR Comb.: " << lidars_combination << std::endl;
+    std::cout << "Save Directory: " << save_dir << std::endl;
+    std::cout << "\033[0m" << std::endl;
+
+    recorder_ptr_.reset(new DataRecorder<RecordPointType>());
+    recorder_ptr_->init(save_dir, 0, true);
+
+    recorder_server_ = nh.advertiseService("save_data", data_recorder_callback);
+    //----------------------------------------------------------------------------------------------------
 
     p_pre->lidar_type = lidar_type;
     cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
@@ -885,7 +972,11 @@ int main(int argc, char** argv)
             svd_time   = 0;
             t0 = omp_get_wtime();
 
-            p_imu->Process(Measures, kf, feats_undistort);
+            // p_imu->Process(Measures, kf, feats_undistort);
+            recorder_ptr_->recordTime([&]()
+                                      { p_imu->Process(Measures, kf, feats_undistort); },
+                                      "imu_process", lidar_end_time);
+
             state_point = kf.get_x();
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
 
@@ -901,8 +992,16 @@ int main(int argc, char** argv)
             lasermap_fov_segment();
 
             /*** downsample the feature points in a scan ***/
-            downSizeFilterSurf.setInputCloud(feats_undistort);
-            downSizeFilterSurf.filter(*feats_down_body);
+            // downSizeFilterSurf.setInputCloud(feats_undistort);
+            // downSizeFilterSurf.filter(*feats_down_body);
+            recorder_ptr_->recordTime(
+                [&]()
+                {
+                    downSizeFilterSurf.setInputCloud(feats_undistort);
+                    downSizeFilterSurf.filter(*feats_down_body);
+                },
+                "downsample", Measures.lidar_beg_time);
+
             t1 = omp_get_wtime();
             feats_down_size = feats_down_body->points.size();
             /*** initialize the map kdtree ***/
@@ -957,7 +1056,11 @@ int main(int argc, char** argv)
             /*** iterated state estimation ***/
             double t_update_start = omp_get_wtime();
             double solve_H_time = 0;
-            kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+            // kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+            recorder_ptr_->recordTime(
+                [&]()
+                { kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time); },
+                "kf_update", lidar_end_time);
             state_point = kf.get_x();
             euler_cur = SO3ToEuler(state_point.rot);
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
@@ -968,14 +1071,27 @@ int main(int argc, char** argv)
 
             double t_update_end = omp_get_wtime();
 
+            Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
+            pose.block<3, 3>(0, 0) = state_point.rot.toRotationMatrix();
+            pose.block<3, 1>(0, 3) = state_point.pos;
+
+            Eigen::Matrix<double, 6, 6> pose_cov = kf.get_P().block<6, 6>(0, 0);
+
+            recorder_ptr_->recordPose(lidar_end_time, std::tie(pose, pose_cov));
+
             /******* Publish odometry *******/
             publish_odometry(pubOdomAftMapped);
 
             /*** add the feature points to map kdtree ***/
             t3 = omp_get_wtime();
-            map_incremental();
+            // map_incremental();
+            recorder_ptr_->recordTime([&]()
+                                      { map_incremental(); }, "map_incremental",
+                                      lidar_end_time);
             t5 = omp_get_wtime();
-            
+
+            recordRamUsage(lidar_end_time);
+
             /******* Publish points *******/
             if (path_en)                         publish_path(pubPath);
             if (scan_pub_en || pcd_save_en)      publish_frame_world(pubLaserCloudFull);
