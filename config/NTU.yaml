@@ -36,10 +36,12 @@ pcd_save:
                                  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
 
 data_recorder:
-    result_dir: "/workspace/lio_baselines_ws/src/lio_baselines/result/NTU"
-    data_id: "nya_01"
+    result_dir: "/workspace/lio_baselines_ws/src/lio_baselines/data/results"
+    dataset: "NTU"
+    data_id: "eee_01"
+    test_topic: "baselines"
     lidar_names: ["OsHori","OsVert"]
     lidar_indices: [0]
-    test_topic: "baselines"
+    algorithm: "fastlio"
     param_set_name: "default"
 

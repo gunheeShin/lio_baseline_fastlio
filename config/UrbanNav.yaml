@@ -36,9 +36,11 @@ pcd_save:
                                  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
 
 data_recorder:
-    result_dir: "/workspace/lio_baselines_ws/src/lio_baselines/result/UrbanNav"
-    data_id: "Mongok"
-    lidar_names: ["VelTop","VelTilt"]
-    lidar_indices: [0]
+    result_dir: "/workspace/lio_baselines_ws/src/lio_baselines/data/results"
+    dataset: "NTU"
+    data_id: "nya_01"
     test_topic: "baselines"
+    lidar_names: ["OsHori","OsVert"]
+    lidar_indices: [0]
+    algorithm: "fastlio"
     param_set_name: "default"

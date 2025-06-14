@@ -146,7 +146,7 @@ shared_ptr<ImuProcess> p_imu(new ImuProcess());
 std::shared_ptr<DataRecorder<RecordPointType>> recorder_ptr_;
 ros::ServiceServer recorder_server_;
 
-std::string result_dir, data_id, test_topic, param_set_name;
+std::string result_dir, dataset, data_id, test_topic, algorithm, param_set_name;
 std::vector<std::string> lidar_names;
 std::vector<int> lidar_indices;
 std::string save_dir;
@@ -846,8 +846,10 @@ int main(int argc, char **argv)
     //----------------------------------------------------------------------------------------------------
     // Data Recorder Configurations
     nh.param<std::string>("data_recorder/result_dir", result_dir, "/");
+    nh.param<std::string>("data_recorder/dataset", dataset, "dataset");
     nh.param<std::string>("data_recorder/data_id", data_id, "data_id");
     nh.param<std::string>("data_recorder/test_topic", test_topic, "test_topic");
+    nh.param<std::string>("data_recorder/algorithm", algorithm, "fastlio");
     nh.param<std::string>("data_recorder/param_set_name", param_set_name, "default");
     nh.param<std::vector<std::string>>("data_recorder/lidar_names", lidar_names,
                                        std::vector<std::string>());
@@ -860,8 +862,8 @@ int main(int argc, char **argv)
     }
     lidars_combination = lidars_combination.substr(0, lidars_combination.size() - 1);
 
-    save_dir = result_dir + "/" + data_id + "/" + lidars_combination + "/" + test_topic + "/" +
-               lidars_combination + "/fastlio" + "/" + param_set_name;
+    save_dir = result_dir + "/" + dataset + "/" + data_id + "/" + test_topic + "/" + lidars_combination
+                + "/" + algorithm  + "/" + param_set_name;
 
     // Check variables
     std::cout << "\033[32m" << "Data Recorder Configurations:" << std::endl;
