@@ -149,6 +149,7 @@ ros::ServiceServer recorder_server_;
 std::string result_dir, dataset, data_id, test_topic, algorithm, param_set_name;
 std::vector<std::string> lidar_names;
 std::vector<int> lidar_indices;
+int save_frame_mode = 0; 
 std::string save_dir;
 
 void SigHandle(int sig)
@@ -783,6 +784,31 @@ void recordRamUsage(double stamp)
     recorder_ptr_->recordValue("RAM_usage", stamp, mem_usage);
 }
 
+void recordCloud() {
+
+    if (!recorder_ptr_->isCloudRecordEnabled())
+        return;
+
+    if (!recorder_ptr_->isInit()) {
+        std::cout << "Recorder is not initialized!" << std::endl;
+        return;
+    }
+
+    pcl::PointCloud<RecordPointType>::Ptr record_cloud(new pcl::PointCloud<RecordPointType>);
+    for (size_t i = 0; i < feats_down_body->points.size(); i++) {
+        RecordPointType point;
+        point.x = feats_down_body->points[i].x;
+        point.y = feats_down_body->points[i].y;
+        point.z = feats_down_body->points[i].z;
+        point.intensity = feats_down_body->points[i].intensity;
+
+        record_cloud->push_back(point);
+    }
+
+    recorder_ptr_->recordCloud(record_cloud, lidar_end_time);
+    recorder_ptr_->saveCloud();
+}
+
 bool data_recorder_callback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
     if (recorder_ptr_ != nullptr)
@@ -854,6 +880,7 @@ int main(int argc, char **argv)
     nh.param<std::vector<std::string>>("data_recorder/lidar_names", lidar_names,
                                        std::vector<std::string>());
     nh.param<std::vector<int>>("data_recorder/lidar_indices", lidar_indices, std::vector<int>());
+    nh.param<int>("data_recorder/save_frame_mode", save_frame_mode, 0);
 
     std::string lidars_combination = "";
     for (auto &index : lidar_indices)
@@ -876,7 +903,7 @@ int main(int argc, char **argv)
     std::cout << "\033[0m" << std::endl;
 
     recorder_ptr_.reset(new DataRecorder<RecordPointType>());
-    recorder_ptr_->init(save_dir, 0, true);
+    recorder_ptr_->init(save_dir, save_frame_mode, true);
 
     recorder_server_ = nh.advertiseService("save_data", data_recorder_callback);
     //----------------------------------------------------------------------------------------------------
@@ -1093,6 +1120,7 @@ int main(int argc, char **argv)
             t5 = omp_get_wtime();
 
             recordRamUsage(lidar_end_time);
+            recordCloud();
 
             /******* Publish points *******/
             if (path_en)                         publish_path(pubPath);
