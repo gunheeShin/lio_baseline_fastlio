@@ -35,14 +35,14 @@ pcd_save:
     interval: -1                 # how many LiDAR frames saved in each pcd file; 
                                  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
 
-data_recorder:
-    result_dir: "/workspace/lbench/results"
-    dataset: "NTU"
-    data_id: "eee_01"
-    test_topic: "baselines"
-    lidar_names: ["OsHori","OsVert"]
-    lidar_indices: [0]
-    algorithm: "fastlio"
-    param_set_name: "default"
-    save_frame_mode: 0 # 0: no save, 1: save entire frame at once, 2: save each frame
+# data_recorder:
+#     result_dir: "/workspace/lbench/results"
+#     dataset: "NTU"
+#     data_id: "eee_01"
+#     test_topic: "baselines"
+#     lidar_names: ["OsHori","OsVert"]
+#     lidar_indices: [0]
+#     algorithm: "fastlio"
+#     param_set_name: "default"
+#     save_frame_mode: 0 # 0: no save, 1: save entire frame at once, 2: save each frame
 
